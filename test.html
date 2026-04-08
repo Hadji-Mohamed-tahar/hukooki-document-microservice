@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: A4;
+            margin: 1cm 1.5cm;
+            @bottom-left {
+                content: "Smart Rent Platform - Document ID: {{ id }}";
+                font-size: 7pt;
+                color: #95a5a6;
+            }
+        }
+        body {
+            font-family: 'Amiri', 'Arial', sans-serif;
+            line-height: 1.7; /* زيادة التباعد لراحة العين */
+            color: #2c3e50;
+            margin: 0;
+            padding: 0;
+            background: #fff;
+        }
+        .main-container {
+            padding: 10px;
+        }
+        /* الهيدر الرسمي */
+        .republic-header {
+            text-align: center;
+            font-weight: bold;
+            font-size: 14pt;
+            margin-bottom: 2px;
+            color: #000;
+        }
+        .header-line {
+            text-align: center;
+            font-size: 12pt;
+            margin-bottom: 25px;
+            border-bottom: 2px double #000;
+            padding-bottom: 10px;
+        }
+        /* صندوق عنوان العقد */
+        .contract-title-box {
+            border: 2px solid #1e8449;
+            background-color: #f9f9f9;
+            padding: 15px;
+            text-align: center;
+            width: 70%;
+            margin: 0 auto 30px auto;
+            border-radius: 5px;
+        }
+        .contract-title {
+            font-size: 17pt;
+            font-weight: bold;
+            color: #1e8449;
+            margin: 0;
+        }
+        /* تنسيق المواد */
+        .section {
+            margin-bottom: 20px;
+        }
+        .section-title {
+            font-size: 13pt;
+            font-weight: bold;
+            background-color: #f8f9fa;
+            padding: 5px 12px;
+            border-right: 5px solid #c0392b; 
+            margin-bottom: 12px;
+            display: block;
+        }
+        .clause {
+            text-align: justify;
+            margin-right: 10px;
+            font-size: 12pt;
+            color: #333;
+        }
+        
+        /* التعديل الجديد: البيانات الديناميكية بخط غامق وأكبر */
+        .dynamic-data {
+            color: #000;
+            font-weight: 900; /* أقصى درجة ثقل للخط */
+            font-size: 13pt;   /* أكبر من النص العادي بمقدار 1pt أو 2pt */
+            padding: 0 2px;
+            display: inline-block;
+        }
+        
+        .field-label {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        /* جدول التوقيعات */
+        .signatures-table {
+            margin-top: 50px;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .sig-box {
+            width: 50%;
+            vertical-align: top;
+            text-align: center;
+            padding: 20px;
+            border: 1px solid #eee;
+        }
+        .sig-title {
+            font-weight: bold;
+            margin-bottom: 70px;
+            display: block;
+            font-size: 12pt;
+        }
+        .footer-note {
+            font-size: 8pt;
+            text-align: center;
+            margin-top: 40px;
+            color: #bdc3c7;
+            border-top: 1px solid #f1f1f1;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-container">
+    <div class="republic-header">الجمهورية الجزائرية الديمقراطية الشعبية</div>
+    <div class="header-line">عقد عمل فردي (نموذج محمي)</div>
+
+    <div class="contract-title-box">
+        <p class="contract-title">عقد عمل فردي</p>
+        <small>مطابق للقانون رقم 90-11 المتعلق بعلاقات العمل</small>
+    </div>
+
+    <div class="section">
+        <span class="section-title">المادة 1: أطراف العقد</span>
+        <div class="clause">
+            تم الاتفاق بين كل من الهيئة المستخدمة والموظف المذكور أدناه:
+            <br>
+            <span class="field-label">السيد(ة):</span> <span class="dynamic-data">{{ employee_name }}</span>
+            <br>
+            <span class="field-label">المولود(ة) بتاريخ:</span> <span class="dynamic-data">{{ birth_date }}</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <span class="section-title">المادة 2: طبيعة العقد والمنصب</span>
+        <div class="clause">
+            بموجب هذا العقد، يشغل الموظف منصب: <span class="dynamic-data">{{ job_title }}</span>.
+            <br>
+            تم إبرام هذا العقد بصيغة: <span class="dynamic-data">{{ contract_duration }}</span>.
+        </div>
+    </div>
+
+    <div class="section">
+        <span class="section-title">المادة 3: التعويضات والأجر</span>
+        <div class="clause">
+            يتقاضى الموظف مقابلاً لعمله أجراً قاعدياً قدره: <span class="dynamic-data">{{ salary }}</span> دج (جزائري).
+            يخضع هذا الأجر للاقتطاعات القانونية المتعلقة بالضمان الاجتماعي والضريبة على الدخل الإجمالي.
+        </div>
+    </div>
+
+    <div class="section">
+        <span class="section-title">المادة 4: أحكام عامة</span>
+        <div class="clause">
+            يلتزم الموظف باحترام النظام الداخلي للهيئة المستخدمة، والمحافظة على أسرارها المهنية، وأداء مهامه بكل أمانة وإخلاص.
+        </div>
+    </div>
+
+    <table class="signatures-table">
+        <tr>
+            <td class="sig-box">
+                <span class="sig-title">توقيع الموظف</span>
+                <p style="font-size: 9pt; color: #7f8c8d;">(بصمة أو توقيع مع عبارة قرئ وصودق عليه)</p>
+            </td>
+            <td class="sig-box">
+                <span class="sig-title">ختم وتوقيع المستخدم</span>
+                <p style="font-size: 9pt; color: #7f8c8d;">(يختم بختم الشركة الرسمي)</p>
+            </td>
+        </tr>
+    </table>
+
+    <div class="footer-note">
+        تم توليد هذا العقد إلكترونياً عبر منصة Smart Rent - الجزائر
+    </div>
+</div>
+
+</body>
+</html>
