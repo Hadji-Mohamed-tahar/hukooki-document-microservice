@@ -3,7 +3,9 @@ import sys
 import uuid
 from typing import Dict, Any, Optional
 
-# --- 1. حل مشكلة Windows DLLs (لضمان عمل WeasyPrint على الويندوز) ---
+# =========================
+# 1. Windows DLL Fix
+# =========================
 gtk_path = r'C:\msys64\ucrt64\bin'
 
 if os.path.exists(gtk_path):
@@ -12,10 +14,12 @@ if os.path.exists(gtk_path):
         try:
             os.add_dll_directory(gtk_path)
         except Exception as e:
-            print(f"⚠️ Warning: Could not add DLL directory: {e}")
+            print(f"⚠️ DLL Warning: {e}")
     sys.path.append(gtk_path)
 
-# استيراد المكتبات
+# =========================
+# 2. Imports
+# =========================
 try:
     from fastapi import FastAPI, UploadFile, File, Response
     from pydantic import BaseModel
@@ -23,36 +27,38 @@ try:
     from jinja2 import Environment, Undefined
     from fastapi.responses import JSONResponse
 except ImportError as e:
-    print(f"❌ Error: Missing libraries. Details: {e}")
+    print(f"Missing dependencies: {e}")
     sys.exit(1)
 
-# --- 2. تخصيص محرك Jinja2 للتعامل مع البيانات المفقودة ---
+# =========================
+# 3. Safe Undefined (placeholders)
+# =========================
 class PlaceholderUndefined(Undefined):
-    """
-    هذا الكلاس يمنع المحرك من الانهيار إذا كانت البيانات فارغة.
-    بدلاً من الخطأ، سيقوم بطباعة نقاط "...................."
-    """
-    def __str__(self) -> str:
+    def __str__(self):
         return "...................."
-    
+
     def __getattr__(self, name):
-        # لدعم الكائنات المتداخلة مثل user.name
         return self
 
+# =========================
+# 4. App
+# =========================
 app = FastAPI(title="Hokoki PDF Engine")
 
-# إعداد مجلد القوالب
 TEMPLATE_DIR = "./templates"
-if not os.path.exists(TEMPLATE_DIR):
-    os.makedirs(TEMPLATE_DIR)
+os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
-# --- 3. نماذج البيانات ---
+# =========================
+# 5. Request Model
+# =========================
 class GeneratePdfRequest(BaseModel):
     template_name: Optional[str] = None
     data: Dict[str, Any]
     template_content: Optional[str] = None
 
-# --- 4. الدوال المساعدة ---
+# =========================
+# 6. Helpers
+# =========================
 def unified_response(success: bool, message: str, data: Any = None, status_code: int = 200):
     return JSONResponse(
         status_code=status_code,
@@ -63,74 +69,144 @@ def unified_response(success: bool, message: str, data: Any = None, status_code:
         }
     )
 
-# --- 5. المسارات (Routes) ---
+# =========================
+# 7. RTL FIX (IMPORTANT)
+# =========================
+def fix_arabic_data(data: dict):
+    """
+    يمنع مشاكل copy/paste في PDF العربي
+    بإضافة RTL Mark
+    """
+    rtl_mark = "\u200F"  # Right-to-left mark
 
+    fixed = {}
+    for k, v in data.items():
+        if isinstance(v, str):
+            fixed[k] = rtl_mark + v
+        else:
+            fixed[k] = v
+
+    return fixed
+
+# =========================
+# 8. CSS (FINAL FIX)
+# =========================
+ARABIC_CSS = CSS(string="""
+    @page {
+        size: A4;
+        margin: 2cm;
+    }
+
+    body {
+        font-family: 'Amiri', 'Cairo', Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+        color: #000;
+
+        direction: rtl;
+        unicode-bidi: plaintext;
+        text-align: right;
+    }
+
+    .a4-page {
+        direction: rtl;
+        unicode-bidi: plaintext;
+        text-align: right;
+    }
+
+    p, span, div {
+        unicode-bidi: plaintext;
+    }
+
+    .text-center {
+        text-align: center;
+    }
+
+    .text-right {
+        text-align: right;
+    }
+""")
+
+# =========================
+# 9. Routes
+# =========================
 @app.get("/")
 def home():
-    return unified_response(True, "محرك توليد الوثائق يعمل بنجاح", {"engine": "WeasyPrint Arabic", "status": "online"})
+    return unified_response(
+        True,
+        "PDF Engine Running",
+        {"engine": "WeasyPrint Arabic", "status": "online"}
+    )
 
 @app.post("/generate-pdf")
 async def generate_pdf(request: GeneratePdfRequest):
-    html_content = request.template_content
-    
-    # التحقق من مصدر الـ HTML
-    if not html_content:
-        if not request.template_name:
-            return unified_response(False, "يجب توفير اسم القالب أو المحتوى", None, 400)
-        
-        template_path = os.path.join(TEMPLATE_DIR, request.template_name)
-        if not os.path.exists(template_path):
-            return unified_response(False, "ملف القالب غير موجود في السيرفر", None, 404)
-        
-        with open(template_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-
     try:
-        # --- السحر هنا: إعداد بيئة Jinja2 مع التخصيص الجديد ---
+        # =========================
+        # Load template
+        # =========================
+        html_content = request.template_content
+
+        if not html_content:
+            if not request.template_name:
+                return unified_response(False, "Template required", None, 400)
+
+            template_path = os.path.join(TEMPLATE_DIR, request.template_name)
+
+            if not os.path.exists(template_path):
+                return unified_response(False, "Template not found", None, 404)
+
+            with open(template_path, "r", encoding="utf-8") as f:
+                html_content = f.read()
+
+        # =========================
+        # Jinja setup
+        # =========================
         env = Environment(undefined=PlaceholderUndefined)
-        jinja_template = env.from_string(html_content)
-        
-        # رندرة القالب (سواء كانت data مليئة أو فارغة {})
-        rendered_html = jinja_template.render(request.data)
+        template = env.from_string(html_content)
 
-        # إعدادات CSS لدعم العربية والخطوط
-        arabic_css = CSS(string='''
-            @page { size: A4; margin: 2cm; }
-            * { direction: rtl; font-family: 'Amiri', 'Arial', sans-serif; }
-            body { font-size: 14px; line-height: 1.6; color: #000; }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-        ''')
+        safe_data = fix_arabic_data(request.data)
 
-        # توليد الـ PDF
-        pdf_binary = HTML(string=rendered_html).write_pdf(stylesheets=[arabic_css])
+        rendered_html = template.render(safe_data)
+
+        # =========================
+        # PDF generation
+        # =========================
+        pdf = HTML(string=rendered_html).write_pdf(
+            stylesheets=[ARABIC_CSS]
+        )
 
         return Response(
-            content=pdf_binary,
+            content=pdf,
             media_type="application/pdf",
             headers={
                 "Content-Disposition": f"attachment; filename=hokoki_{uuid.uuid4().hex[:8]}.pdf"
             }
         )
-    except Exception as e:
-        return unified_response(False, f"فشل توليد الملف: {str(e)}", None, 500)
 
+    except Exception as e:
+        return unified_response(False, f"PDF Error: {str(e)}", None, 500)
+
+# =========================
+# 10. Upload template
+# =========================
 @app.post("/upload-template")
 async def upload_template(file: UploadFile = File(...)):
     if not file.filename.lower().endswith((".html", ".htm")):
-        return unified_response(False, "فقط ملفات HTML مسموح بها", None, 400)
+        return unified_response(False, "HTML only", None, 400)
 
     file_id = f"{uuid.uuid4()}.html"
-    file_path = os.path.join(TEMPLATE_DIR, file_id)
-    
-    content = await file.read()
-    with open(file_path, "wb") as buffer:
-        buffer.write(content)
-        
-    return unified_response(True, "تم رفع القالب بنجاح", {"template_name": file_id})
+    path = os.path.join(TEMPLATE_DIR, file_id)
 
-# --- 6. تشغيل السيرفر ---
+    content = await file.read()
+
+    with open(path, "wb") as f:
+        f.write(content)
+
+    return unified_response(True, "Uploaded", {"template_name": file_id})
+
+# =========================
+# 11. Run server
+# =========================
 if __name__ == "__main__":
     import uvicorn
-    # التشغيل على بورت 8001
     uvicorn.run(app, host="0.0.0.0", port=8001)
