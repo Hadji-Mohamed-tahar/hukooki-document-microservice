@@ -26,12 +26,17 @@ try:
     from weasyprint import HTML, CSS
     from jinja2 import Environment, Undefined
     from fastapi.responses import JSONResponse
+
+    # 🔥 NEW (حل مشكلة العربية في النسخ)
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+
 except ImportError as e:
     print(f"Missing dependencies: {e}")
     sys.exit(1)
 
 # =========================
-# 3. Safe Undefined (placeholders)
+# 3. Safe Undefined
 # =========================
 class PlaceholderUndefined(Undefined):
     def __str__(self):
@@ -57,7 +62,7 @@ class GeneratePdfRequest(BaseModel):
     template_content: Optional[str] = None
 
 # =========================
-# 6. Helpers
+# 6. Response Helper
 # =========================
 def unified_response(success: bool, message: str, data: Any = None, status_code: int = 200):
     return JSONResponse(
@@ -70,26 +75,35 @@ def unified_response(success: bool, message: str, data: Any = None, status_code:
     )
 
 # =========================
-# 7. RTL FIX (IMPORTANT)
+# 7. 🔥 FIX ARABIC (CRITICAL)
 # =========================
-def fix_arabic_data(data: dict):
+def fix_arabic_text(data: dict):
     """
-    يمنع مشاكل copy/paste في PDF العربي
-    بإضافة RTL Mark
+    الحل الحقيقي لمشكلة:
+    - مقلوب في النسخ
+    - ترتيب الحروف
+    - BiDi PDF issue
     """
-    rtl_mark = "\u200F"  # Right-to-left mark
 
     fixed = {}
+
     for k, v in data.items():
         if isinstance(v, str):
-            fixed[k] = rtl_mark + v
+
+            # 1. إعادة تشكيل الحروف العربية
+            reshaped = arabic_reshaper.reshape(v)
+
+            # 2. تصحيح اتجاه القراءة
+            bidi_text = get_display(reshaped)
+
+            fixed[k] = bidi_text
         else:
             fixed[k] = v
 
     return fixed
 
 # =========================
-# 8. CSS (FINAL FIX)
+# 8. CSS FINAL FIX
 # =========================
 ARABIC_CSS = CSS(string="""
     @page {
@@ -100,7 +114,7 @@ ARABIC_CSS = CSS(string="""
     body {
         font-family: 'Amiri', 'Cairo', Arial, sans-serif;
         font-size: 14px;
-        line-height: 1.6;
+        line-height: 1.7;
         color: #000;
 
         direction: rtl;
@@ -115,6 +129,7 @@ ARABIC_CSS = CSS(string="""
     }
 
     p, span, div {
+        direction: rtl;
         unicode-bidi: plaintext;
     }
 
@@ -135,11 +150,12 @@ def home():
     return unified_response(
         True,
         "PDF Engine Running",
-        {"engine": "WeasyPrint Arabic", "status": "online"}
+        {"engine": "WeasyPrint Arabic FIXED", "status": "online"}
     )
 
 @app.post("/generate-pdf")
 async def generate_pdf(request: GeneratePdfRequest):
+
     try:
         # =========================
         # Load template
@@ -159,12 +175,13 @@ async def generate_pdf(request: GeneratePdfRequest):
                 html_content = f.read()
 
         # =========================
-        # Jinja setup
+        # Jinja2 render
         # =========================
         env = Environment(undefined=PlaceholderUndefined)
         template = env.from_string(html_content)
 
-        safe_data = fix_arabic_data(request.data)
+        # 🔥 APPLY FIX
+        safe_data = fix_arabic_text(request.data)
 
         rendered_html = template.render(safe_data)
 
@@ -191,6 +208,7 @@ async def generate_pdf(request: GeneratePdfRequest):
 # =========================
 @app.post("/upload-template")
 async def upload_template(file: UploadFile = File(...)):
+
     if not file.filename.lower().endswith((".html", ".htm")):
         return unified_response(False, "HTML only", None, 400)
 
