@@ -1,208 +1,158 @@
-import os
-import sys
+from fastapi import FastAPI, Response
+from pydantic import BaseModel
+from jinja2 import Environment, Undefined
+from weasyprint import HTML, CSS
+from weasyprint.text.fonts import FontConfiguration
+
 import uuid
-from typing import Dict, Any, Optional
+import os
+import unicodedata
+
+app = FastAPI(title="Arabic PDF Engine - PRO FIX FINAL")
+
+BASE_DIR = os.path.abspath(".")
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+FONT_DIR = os.path.join(BASE_DIR, "fonts")
+
+os.makedirs(TEMPLATE_DIR, exist_ok=True)
+os.makedirs(FONT_DIR, exist_ok=True)
+
+# 🔥 IMPORTANT: SINGLE SOURCE OF TRUTH
+font_config = FontConfiguration()
+
+FONT_PATH = os.path.join(
+    FONT_DIR,
+    "NotoNaskhArabic-Regular.ttf"
+).replace("\\", "/")
+
 
 # =========================
-# 1. Windows Fix
+# MODEL
 # =========================
-gtk_path = r'C:\msys64\ucrt64\bin'
+class GeneratePdfRequest(BaseModel):
+    template_name: str | None = None
+    template_content: str | None = None
+    data: dict = {}
 
-if os.path.exists(gtk_path):
-    os.environ['PATH'] = gtk_path + os.pathsep + os.environ.get('PATH', '')
-    if hasattr(os, 'add_dll_directory'):
-        try:
-            os.add_dll_directory(gtk_path)
-        except Exception as e:
-            print(f"⚠️ DLL Warning: {e}")
-    sys.path.append(gtk_path)
 
 # =========================
-# 2. Imports
-# =========================
-try:
-    from fastapi import FastAPI, UploadFile, File, Response
-    from pydantic import BaseModel
-    from weasyprint import HTML, CSS
-    from jinja2 import Environment, Undefined
-    from fastapi.responses import JSONResponse
-except ImportError as e:
-    print(f"Missing dependencies: {e}")
-    sys.exit(1)
-
-# =========================
-# 3. Safe Undefined
+# SAFE JINJA
 # =========================
 class PlaceholderUndefined(Undefined):
     def __str__(self):
         return "...................."
 
-    def __getattr__(self, name):
-        return self
 
 # =========================
-# 4. App
+# CLEAN DATA (ONLY NORMALIZATION)
 # =========================
-app = FastAPI(title="Gov Arabic PDF Engine PRO")
+def normalize(value):
+    if isinstance(value, str):
+        return unicodedata.normalize("NFC", value)  # 🔥 مهم (NFC وليس NFKC)
+    return value
 
-TEMPLATE_DIR = "./templates"
-os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
-# =========================
-# 5. Model
-# =========================
-class GeneratePdfRequest(BaseModel):
-    template_name: Optional[str] = None
-    data: Dict[str, Any]
-    template_content: Optional[str] = None
+def clean_data(data: dict):
+    return {k: normalize(v) for k, v in (data or {}).items()}
+
 
 # =========================
-# 6. Response helper
+# TEMPLATE
 # =========================
-def unified_response(success: bool, message: str, data: Any = None, status_code: int = 200):
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "success": success,
-            "message": message,
-            "data": data
+def load_template(name: str):
+    path = os.path.join(TEMPLATE_DIR, name)
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+# =========================
+# CSS (MINIMAL + CORRECT)
+# =========================
+def build_css():
+    return CSS(string=f"""
+        @font-face {{
+            font-family: 'NotoNaskh';
+            src: url('file:///{FONT_PATH}');
+        }}
+
+        @page {{
+            size: A4;
+            margin: 20mm;
+        }}
+
+        body {{
+            font-family: 'NotoNaskh';
+            direction: rtl;
+            text-align: right;
+
+            font-size: 14pt;
+            line-height: 1.9;
+            color: #000;
+
+            /* 🔥 THIS IS THE REAL FIX */
+            unicode-bidi: plaintext;
+
+            text-rendering: optimizeLegibility;
+        }}
+
+        * {{
+            font-family: 'NotoNaskh' !important;
+        }}
+
+        p, div, span {{
+            direction: rtl;
+            unicode-bidi: plaintext;
+        }}
+
+        .ltr {{
+            direction: ltr;
+            unicode-bidi: embed;
+        }}
+    """)
+
+# =========================
+# PDF ENGINE
+# =========================
+def generate_pdf(html_content: str) -> bytes:
+    css = build_css()
+
+    html = HTML(
+        string=html_content,
+        base_url=FONT_DIR
+    )
+
+    return html.write_pdf(
+        stylesheets=[css],
+        font_config=font_config  # 🔥 THIS IS CRITICAL
+    )
+
+
+# =========================
+# API
+# =========================
+@app.post("/generate-pdf")
+async def generate_pdf_api(req: GeneratePdfRequest):
+
+    html = req.template_content
+    if not html:
+        html = load_template(req.template_name)
+
+    safe_data = clean_data(req.data)
+
+    env = Environment(
+        undefined=PlaceholderUndefined,
+        autoescape=False
+    )
+
+    template = env.from_string(html)
+    rendered = template.render(safe_data)
+
+    pdf = generate_pdf(rendered)
+
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=doc_{uuid.uuid4().hex[:8]}.pdf"
         }
     )
-
-# =========================
-# 7. IMPORTANT FIX (REAL GOV SOLUTION)
-# =========================
-def clean_data(data: dict):
-    """
-    ⚠️ مهم جداً:
-    لا نلمس النص العربي نهائياً
-    WeasyPrint + Unicode handles it natively
-    """
-    return data
-
-# =========================
-# 8. GOV CSS FINAL FIX
-# =========================
-ARABIC_CSS = CSS(string="""
-    @page {
-        size: A4;
-        margin: 2cm;
-    }
-
-    body {
-        font-family: 'Amiri', 'Cairo', Arial, sans-serif;
-        font-size: 14px;
-        line-height: 1.8;
-        color: #000;
-
-        direction: rtl;
-        unicode-bidi: isolate;   /* 🔥 أهم سطر */
-        text-align: right;
-    }
-
-    .a4-page {
-        direction: rtl;
-        unicode-bidi: isolate;
-        text-align: right;
-    }
-
-    p, span, div {
-        unicode-bidi: plaintext;  /* 🔥 يمنع قلب النص عند النسخ */
-    }
-
-    /* 🔥 إصلاح النسخ داخل PDF */
-    * {
-        -webkit-user-select: text;
-        user-select: text;
-    }
-
-    .text-center {
-        text-align: center;
-    }
-""")
-
-# =========================
-# 9. Engine
-# =========================
-@app.get("/")
-def home():
-    return unified_response(
-        True,
-        "Gov PDF Engine PRO Running",
-        {"status": "stable", "copy_fix": "enabled"}
-    )
-
-@app.post("/generate-pdf")
-async def generate_pdf(request: GeneratePdfRequest):
-
-    try:
-        # =========================
-        # Load template
-        # =========================
-        html_content = request.template_content
-
-        if not html_content:
-            if not request.template_name:
-                return unified_response(False, "Template required", None, 400)
-
-            path = os.path.join(TEMPLATE_DIR, request.template_name)
-
-            if not os.path.exists(path):
-                return unified_response(False, "Template not found", None, 404)
-
-            with open(path, "r", encoding="utf-8") as f:
-                html_content = f.read()
-
-        # =========================
-        # Jinja render
-        # =========================
-        env = Environment(undefined=PlaceholderUndefined)
-        template = env.from_string(html_content)
-
-        safe_data = clean_data(request.data)
-
-        rendered_html = template.render(safe_data)
-
-        # =========================
-        # PDF render
-        # =========================
-        pdf = HTML(string=rendered_html).write_pdf(
-            stylesheets=[ARABIC_CSS]
-        )
-
-        return Response(
-            content=pdf,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename=gov_{uuid.uuid4().hex[:8]}.pdf"
-            }
-        )
-
-    except Exception as e:
-        return unified_response(False, f"PDF Error: {str(e)}", None, 500)
-
-# =========================
-# 10. Upload template
-# =========================
-@app.post("/upload-template")
-async def upload_template(file: UploadFile = File(...)):
-
-    if not file.filename.lower().endswith((".html", ".htm")):
-        return unified_response(False, "HTML only", None, 400)
-
-    file_id = f"{uuid.uuid4()}.html"
-    path = os.path.join(TEMPLATE_DIR, file_id)
-
-    content = await file.read()
-
-    with open(path, "wb") as f:
-        f.write(content)
-
-    return unified_response(True, "Uploaded", {"template_name": file_id})
-
-# =========================
-# 11. Run
-# =========================
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
