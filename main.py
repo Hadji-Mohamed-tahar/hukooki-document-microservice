@@ -4,7 +4,7 @@ import uuid
 from typing import Dict, Any, Optional
 
 # =========================
-# 1. Windows Fix (Keep safe)
+# 1. Windows Fix
 # =========================
 gtk_path = r'C:\msys64\ucrt64\bin'
 
@@ -43,7 +43,7 @@ class PlaceholderUndefined(Undefined):
 # =========================
 # 4. App
 # =========================
-app = FastAPI(title="Gov Arabic PDF Engine")
+app = FastAPI(title="Gov Arabic PDF Engine PRO")
 
 TEMPLATE_DIR = "./templates"
 os.makedirs(TEMPLATE_DIR, exist_ok=True)
@@ -70,32 +70,18 @@ def unified_response(success: bool, message: str, data: Any = None, status_code:
     )
 
 # =========================
-# 7. 🔥 GOV FIX (REAL SOLUTION)
+# 7. IMPORTANT FIX (REAL GOV SOLUTION)
 # =========================
-RTL_START = "\u202B"  # RTL embed
-RTL_END = "\u202C"
-
-def fix_arabic_for_gov_pdf(data: dict):
+def clean_data(data: dict):
     """
-    الحل الحكومي الحقيقي:
-    - لا reshaper (يسبب مشاكل copy)
-    - لا bidi (يكسر extraction)
-    - فقط Unicode embedding
+    ⚠️ مهم جداً:
+    لا نلمس النص العربي نهائياً
+    WeasyPrint + Unicode handles it natively
     """
-
-    fixed = {}
-
-    for k, v in data.items():
-        if isinstance(v, str):
-            # حماية النص العربي داخل RTL context
-            fixed[k] = f"{RTL_START}{v}{RTL_END}"
-        else:
-            fixed[k] = v
-
-    return fixed
+    return data
 
 # =========================
-# 8. GOV CSS (CRITICAL FIX)
+# 8. GOV CSS FINAL FIX
 # =========================
 ARABIC_CSS = CSS(string="""
     @page {
@@ -110,27 +96,28 @@ ARABIC_CSS = CSS(string="""
         color: #000;
 
         direction: rtl;
-        unicode-bidi: embed;
+        unicode-bidi: isolate;   /* 🔥 أهم سطر */
         text-align: right;
     }
 
     .a4-page {
         direction: rtl;
-        unicode-bidi: embed;
+        unicode-bidi: isolate;
         text-align: right;
     }
 
     p, span, div {
-        unicode-bidi: embed;
-        direction: rtl;
+        unicode-bidi: plaintext;  /* 🔥 يمنع قلب النص عند النسخ */
+    }
+
+    /* 🔥 إصلاح النسخ داخل PDF */
+    * {
+        -webkit-user-select: text;
+        user-select: text;
     }
 
     .text-center {
         text-align: center;
-    }
-
-    .text-right {
-        text-align: right;
     }
 """)
 
@@ -141,8 +128,8 @@ ARABIC_CSS = CSS(string="""
 def home():
     return unified_response(
         True,
-        "Gov PDF Engine Running",
-        {"status": "production-ready", "rtl_fix": "unicode_embed"}
+        "Gov PDF Engine PRO Running",
+        {"status": "stable", "copy_fix": "enabled"}
     )
 
 @app.post("/generate-pdf")
@@ -172,7 +159,7 @@ async def generate_pdf(request: GeneratePdfRequest):
         env = Environment(undefined=PlaceholderUndefined)
         template = env.from_string(html_content)
 
-        safe_data = fix_arabic_for_gov_pdf(request.data)
+        safe_data = clean_data(request.data)
 
         rendered_html = template.render(safe_data)
 
@@ -187,7 +174,7 @@ async def generate_pdf(request: GeneratePdfRequest):
             content=pdf,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename=gov_doc_{uuid.uuid4().hex[:8]}.pdf"
+                "Content-Disposition": f"attachment; filename=gov_{uuid.uuid4().hex[:8]}.pdf"
             }
         )
 
@@ -195,7 +182,7 @@ async def generate_pdf(request: GeneratePdfRequest):
         return unified_response(False, f"PDF Error: {str(e)}", None, 500)
 
 # =========================
-# 10. Upload
+# 10. Upload template
 # =========================
 @app.post("/upload-template")
 async def upload_template(file: UploadFile = File(...)):
