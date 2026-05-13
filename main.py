@@ -4,7 +4,7 @@ import uuid
 from typing import Dict, Any, Optional
 
 # =========================
-# 1. Windows DLL Fix
+# 1. Windows Fix (Keep safe)
 # =========================
 gtk_path = r'C:\msys64\ucrt64\bin'
 
@@ -26,11 +26,6 @@ try:
     from weasyprint import HTML, CSS
     from jinja2 import Environment, Undefined
     from fastapi.responses import JSONResponse
-
-    # 🔥 NEW (حل مشكلة العربية في النسخ)
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
 except ImportError as e:
     print(f"Missing dependencies: {e}")
     sys.exit(1)
@@ -48,13 +43,13 @@ class PlaceholderUndefined(Undefined):
 # =========================
 # 4. App
 # =========================
-app = FastAPI(title="Hokoki PDF Engine")
+app = FastAPI(title="Gov Arabic PDF Engine")
 
 TEMPLATE_DIR = "./templates"
 os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
 # =========================
-# 5. Request Model
+# 5. Model
 # =========================
 class GeneratePdfRequest(BaseModel):
     template_name: Optional[str] = None
@@ -62,7 +57,7 @@ class GeneratePdfRequest(BaseModel):
     template_content: Optional[str] = None
 
 # =========================
-# 6. Response Helper
+# 6. Response helper
 # =========================
 def unified_response(success: bool, message: str, data: Any = None, status_code: int = 200):
     return JSONResponse(
@@ -75,35 +70,32 @@ def unified_response(success: bool, message: str, data: Any = None, status_code:
     )
 
 # =========================
-# 7. 🔥 FIX ARABIC (CRITICAL)
+# 7. 🔥 GOV FIX (REAL SOLUTION)
 # =========================
-def fix_arabic_text(data: dict):
+RTL_START = "\u202B"  # RTL embed
+RTL_END = "\u202C"
+
+def fix_arabic_for_gov_pdf(data: dict):
     """
-    الحل الحقيقي لمشكلة:
-    - مقلوب في النسخ
-    - ترتيب الحروف
-    - BiDi PDF issue
+    الحل الحكومي الحقيقي:
+    - لا reshaper (يسبب مشاكل copy)
+    - لا bidi (يكسر extraction)
+    - فقط Unicode embedding
     """
 
     fixed = {}
 
     for k, v in data.items():
         if isinstance(v, str):
-
-            # 1. إعادة تشكيل الحروف العربية
-            reshaped = arabic_reshaper.reshape(v)
-
-            # 2. تصحيح اتجاه القراءة
-            bidi_text = get_display(reshaped)
-
-            fixed[k] = bidi_text
+            # حماية النص العربي داخل RTL context
+            fixed[k] = f"{RTL_START}{v}{RTL_END}"
         else:
             fixed[k] = v
 
     return fixed
 
 # =========================
-# 8. CSS FINAL FIX
+# 8. GOV CSS (CRITICAL FIX)
 # =========================
 ARABIC_CSS = CSS(string="""
     @page {
@@ -114,23 +106,23 @@ ARABIC_CSS = CSS(string="""
     body {
         font-family: 'Amiri', 'Cairo', Arial, sans-serif;
         font-size: 14px;
-        line-height: 1.7;
+        line-height: 1.8;
         color: #000;
 
         direction: rtl;
-        unicode-bidi: plaintext;
+        unicode-bidi: embed;
         text-align: right;
     }
 
     .a4-page {
         direction: rtl;
-        unicode-bidi: plaintext;
+        unicode-bidi: embed;
         text-align: right;
     }
 
     p, span, div {
+        unicode-bidi: embed;
         direction: rtl;
-        unicode-bidi: plaintext;
     }
 
     .text-center {
@@ -143,14 +135,14 @@ ARABIC_CSS = CSS(string="""
 """)
 
 # =========================
-# 9. Routes
+# 9. Engine
 # =========================
 @app.get("/")
 def home():
     return unified_response(
         True,
-        "PDF Engine Running",
-        {"engine": "WeasyPrint Arabic FIXED", "status": "online"}
+        "Gov PDF Engine Running",
+        {"status": "production-ready", "rtl_fix": "unicode_embed"}
     )
 
 @app.post("/generate-pdf")
@@ -166,27 +158,26 @@ async def generate_pdf(request: GeneratePdfRequest):
             if not request.template_name:
                 return unified_response(False, "Template required", None, 400)
 
-            template_path = os.path.join(TEMPLATE_DIR, request.template_name)
+            path = os.path.join(TEMPLATE_DIR, request.template_name)
 
-            if not os.path.exists(template_path):
+            if not os.path.exists(path):
                 return unified_response(False, "Template not found", None, 404)
 
-            with open(template_path, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 html_content = f.read()
 
         # =========================
-        # Jinja2 render
+        # Jinja render
         # =========================
         env = Environment(undefined=PlaceholderUndefined)
         template = env.from_string(html_content)
 
-        # 🔥 APPLY FIX
-        safe_data = fix_arabic_text(request.data)
+        safe_data = fix_arabic_for_gov_pdf(request.data)
 
         rendered_html = template.render(safe_data)
 
         # =========================
-        # PDF generation
+        # PDF render
         # =========================
         pdf = HTML(string=rendered_html).write_pdf(
             stylesheets=[ARABIC_CSS]
@@ -196,7 +187,7 @@ async def generate_pdf(request: GeneratePdfRequest):
             content=pdf,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename=hokoki_{uuid.uuid4().hex[:8]}.pdf"
+                "Content-Disposition": f"attachment; filename=gov_doc_{uuid.uuid4().hex[:8]}.pdf"
             }
         )
 
@@ -204,7 +195,7 @@ async def generate_pdf(request: GeneratePdfRequest):
         return unified_response(False, f"PDF Error: {str(e)}", None, 500)
 
 # =========================
-# 10. Upload template
+# 10. Upload
 # =========================
 @app.post("/upload-template")
 async def upload_template(file: UploadFile = File(...)):
@@ -223,7 +214,7 @@ async def upload_template(file: UploadFile = File(...)):
     return unified_response(True, "Uploaded", {"template_name": file_id})
 
 # =========================
-# 11. Run server
+# 11. Run
 # =========================
 if __name__ == "__main__":
     import uvicorn
